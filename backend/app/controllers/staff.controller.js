@@ -13,13 +13,13 @@ exports.register = async (req, res, next) => {
   const {
     ho_ten_nv,
     email,
-    mat_khau,
+    password,
     chuc_vu,
     dia_chi,
     so_dien_thoai,
   } = req.body;
 
-  if (!ho_ten_nv || !email || !mat_khau) {
+  if (!ho_ten_nv || !email || !password) {
     return next(
       new ApiError(400, "Vui lòng điền đầy đủ thông tin bắt buộc")
     );
@@ -34,12 +34,12 @@ exports.register = async (req, res, next) => {
       return next(new ApiError(400, "Email đã tồn tại"));
     }
 
-    const hashedPassword = await bcrypt.hash(mat_khau, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const newStaff = {
       ho_ten_nv,
       email,
-      mat_khau: hashedPassword,
+      password: hashedPassword,
       chuc_vu,
       dia_chi,
       so_dien_thoai,
@@ -47,7 +47,7 @@ exports.register = async (req, res, next) => {
 
     const result = await staffService.create(newStaff);
 
-    const { mat_khau: _, ...safeStaff } = result;
+    const { password: _, ...safeStaff } = result;
 
     return res.status(201).json({
       message: "Tạo tài khoản nhân viên thành công",
@@ -69,12 +69,11 @@ exports.login = async (req, res, next) => {
 
   try {
     const staffService = new StaffService(MongoDB.client);
-
     const result = await authService.login(
       staffService,
       email,
       password,
-      "staff"
+      "nhanvien"
     );
 
     if (!result) {
@@ -127,7 +126,7 @@ exports.update = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy nhân viên"));
     }
 
-    const { mat_khau, ...safeStaff } = staff;
+    const { password, ...safeStaff } = staff;
 
     return res.send({
       message: "Cập nhật thông tin nhân viên thành công",
@@ -150,7 +149,7 @@ exports.getProfile = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy nhân viên"));
     }
 
-    const { mat_khau, ...safeStaff } = staff;
+    const { password, ...safeStaff } = staff;
 
     return res.send(safeStaff);
   } catch (error) {
@@ -169,7 +168,7 @@ exports.getById = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy nhân viên"));
     }
 
-    const { mat_khau, ...safeStaff } = staff;
+    const { password, ...safeStaff } = staff;
 
     return res.send(safeStaff);
   } catch (error) {
@@ -183,7 +182,7 @@ exports.getAll = async (req, res, next) => {
     const staffService = new StaffService(MongoDB.client);
     const staffs = await staffService.findAll();
 
-    const safeStaffs = staffs.map(({ mat_khau, ...staff }) => staff);
+    const safeStaffs = staffs.map(({ password, ...staff }) => staff);
 
     return res.send(safeStaffs);
   } catch (error) {

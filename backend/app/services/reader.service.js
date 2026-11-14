@@ -2,7 +2,7 @@ const { ObjectId } = require("mongodb");
 
 class ReaderService {
   constructor(client) {
-    this.Reader = client.db().collection("docgia");
+    this.Reader = client.db().collection("DocGia");
   }
 
   // Lọc dữ liệu được phép lưu
@@ -17,7 +17,7 @@ class ReaderService {
       dia_chi: payload.dia_chi,
       dien_thoai: payload.dien_thoai,
       email: payload.email?.trim().toLowerCase(),
-      mat_khau: payload.mat_khau,
+      password: payload.password,
     };
 
     Object.keys(reader).forEach((key) => {
@@ -81,7 +81,7 @@ class ReaderService {
     const updateData = this.extractReaderData(payload);
 
     // Không cho phép thay đổi mật khẩu thông qua API cập nhật thông tin
-    delete updateData.mat_khau;
+    delete updateData.password;
 
     return await this.Reader.findOneAndUpdate(
       { _id: new ObjectId(id) },

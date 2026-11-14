@@ -2,7 +2,7 @@ const { ObjectId } = require("mongodb");
 
 class StaffService {
   constructor(client) {
-    this.Staff = client.db().collection("nhanvien");
+    this.Staff = client.db().collection("NhanVien");
   }
 
   // Lọc dữ liệu được phép lưu
@@ -10,12 +10,12 @@ class StaffService {
     const staff = {
       ho_ten_nv: payload.ho_ten_nv,
       email: payload.email?.trim().toLowerCase(),
-      mat_khau: payload.mat_khau,
+      password: payload.password,
       chuc_vu: payload.chuc_vu,
       dia_chi: payload.dia_chi,
       so_dien_thoai: payload.so_dien_thoai,
     };
-
+    // Lọc các giá trị Undefined
     Object.keys(staff).forEach((key) => {
       if (staff[key] === undefined) {
         delete staff[key];
@@ -28,7 +28,6 @@ class StaffService {
   // Thêm nhân viên
   async create(payload) {
     const staff = this.extractStaffData(payload);
-
     const result = await this.Staff.insertOne(staff);
 
     return {
@@ -74,7 +73,7 @@ class StaffService {
     const updateData = this.extractStaffData(payload);
 
     // Không cho phép thay đổi mật khẩu qua API cập nhật thông tin
-    delete updateData.mat_khau;
+    delete updateData.password;
 
     return await this.Staff.findOneAndUpdate(
       { _id: new ObjectId(id) },

@@ -17,10 +17,10 @@ exports.register = async (req, res, next) => {
     dia_chi,
     dien_thoai,
     email,
-    mat_khau,
+    password,
   } = req.body;
 
-  if (!ho_lot || !ten || !email || !mat_khau) {
+  if (!ho_lot || !ten || !email || !password) {
     return next(
       new ApiError(400, "Vui lòng điền đầy đủ thông tin bắt buộc")
     );
@@ -34,7 +34,7 @@ exports.register = async (req, res, next) => {
       return next(new ApiError(400, "Email đã tồn tại"));
     }
 
-    const hashedPassword = await bcrypt.hash(mat_khau, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const newReader = {
       ho_lot,
@@ -44,13 +44,13 @@ exports.register = async (req, res, next) => {
       dia_chi,
       dien_thoai,
       email,
-      mat_khau: hashedPassword,
+      password: hashedPassword,
     };
 
     const result = await readerService.create(newReader);
 
     // Không trả mật khẩu về client
-    const { mat_khau: _, ...safeReader } = result;
+    const { password: _, ...safeReader } = result;
     return res.status(201).json({
       message: "Đăng ký độc giả thành công",
       reader: safeReader,
@@ -128,7 +128,7 @@ exports.update = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy độc giả"));
     }
 
-    const { mat_khau, ...safeReader } = reader;
+    const { password, ...safeReader } = reader;
 
     return res.send({
       message: "Cập nhật thông tin độc giả thành công",
@@ -151,7 +151,7 @@ exports.getProfile = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy độc giả"));
     }
 
-    const { mat_khau, ...safeReader } = reader;
+    const { password, ...safeReader } = reader;
 
     return res.send(safeReader);
   } catch (error) {
@@ -170,7 +170,7 @@ exports.getById = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy độc giả"));
     }
 
-    const { mat_khau, ...safeReader } = reader;
+    const { password, ...safeReader } = reader;
 
     return res.send(safeReader);
   } catch (error) {
@@ -184,7 +184,7 @@ exports.getAll = async (req, res, next) => {
     const readerService = new ReaderService(MongoDB.client);
     const readers = await readerService.findAll();
 
-    const safeReaders = readers.map(({ mat_khau, ...reader }) => reader);
+    const safeReaders = readers.map(({ password, ...reader }) => reader);
 
     return res.send(safeReaders);
   } catch (error) {
