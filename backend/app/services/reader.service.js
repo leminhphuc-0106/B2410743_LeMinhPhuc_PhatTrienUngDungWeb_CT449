@@ -8,16 +8,16 @@ class ReaderService {
   // Lọc dữ liệu được phép lưu
   extractReaderData(payload) {
     const reader = {
-      ho_lot: payload.ho_lot,
-      ten: payload.ten,
-      ngay_sinh: payload.ngay_sinh
-        ? new Date(payload.ngay_sinh)
+      HoLot: payload.HoLot,
+      Ten: payload.Ten,
+      NgaySinh: payload.NgaySinh
+        ? new Date(payload.NgaySinh)
         : null,
-      phai: payload.phai,
-      dia_chi: payload.dia_chi,
-      dien_thoai: payload.dien_thoai,
-      email: payload.email?.trim().toLowerCase(),
-      password: payload.password,
+      Phai: payload.Phai,
+      DiaChi: payload.DiaChi,
+      DienThoai: payload.DienThoai,
+      Email: payload.Email?.trim().toLowerCase(),
+      MatKhau: payload.MatKhau,
     };
 
     Object.keys(reader).forEach((key) => {
@@ -56,11 +56,11 @@ class ReaderService {
   }
 
   // Tìm độc giả theo email
-  async findByEmail(email) {
-    if (!email) return null;
+  async findByEmail(Email) {
+    if (!Email) return null;
 
     return await this.Reader.findOne({
-      email: email.trim().toLowerCase(),
+      Email: Email.trim().toLowerCase(),
     });
   }
 
@@ -68,8 +68,8 @@ class ReaderService {
   async findByName(name) {
     return await this.Reader.find({
       $or: [
-        { ho_lot: { $regex: name, $options: "i" } },
-        { ten: { $regex: name, $options: "i" } },
+        { HoLot: { $regex: name, $options: "i" } },
+        { Ten: { $regex: name, $options: "i" } },
       ],
     }).toArray();
   }
@@ -81,7 +81,7 @@ class ReaderService {
     const updateData = this.extractReaderData(payload);
 
     // Không cho phép thay đổi mật khẩu thông qua API cập nhật thông tin
-    delete updateData.password;
+    delete updateData.MatKhau;
 
     return await this.Reader.findOneAndUpdate(
       { _id: new ObjectId(id) },

@@ -1,5 +1,5 @@
 const verifyStaff = (req, res, next) => {
-  const { id, accountType, chuc_vu } = req.user;
+  const { id, accountType, Chucvu } = req.user;
 
   if (accountType !== "nhanvien") {
     return res.status(403).send({
@@ -8,8 +8,8 @@ const verifyStaff = (req, res, next) => {
   }
 
   if (
-    chuc_vu === "admin" ||
-    (chuc_vu === "staff" && id === req.params.id)
+    Chucvu === "admin" ||
+    (Chucvu === "staff" && id === req.params.id)
   ) {
     return next();
   }

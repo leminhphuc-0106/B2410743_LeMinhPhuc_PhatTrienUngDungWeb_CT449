@@ -8,12 +8,12 @@ class StaffService {
   // Lọc dữ liệu được phép lưu
   extractStaffData(payload) {
     const staff = {
-      ho_ten_nv: payload.ho_ten_nv,
-      email: payload.email?.trim().toLowerCase(),
-      password: payload.password,
-      chuc_vu: payload.chuc_vu,
-      dia_chi: payload.dia_chi,
-      so_dien_thoai: payload.so_dien_thoai,
+      HoTenNV: payload.HoTenNV,
+      Email: payload.Email?.trim().toLowerCase(),
+      Password: payload.Password,
+      Chucvu: payload.Chucvu,
+      Diachi: payload.Diachi,
+      SoDienThoai: payload.SoDienThoai,
     };
     // Lọc các giá trị Undefined
     Object.keys(staff).forEach((key) => {
@@ -51,18 +51,18 @@ class StaffService {
   }
 
   // Tìm nhân viên theo email
-  async findByEmail(email) {
-    if (!email) return null;
+  async findByEmail(Email) {
+    if (!Email) return null;
 
     return await this.Staff.findOne({
-      email: email.trim().toLowerCase(),
+      Email: Email.trim().toLowerCase(),
     });
   }
 
   // Tìm nhân viên theo tên
   async findByName(name) {
     return await this.Staff.find({
-      ho_ten_nv: { $regex: name, $options: "i" },
+      HoTenNV: { $regex: name, $options: "i" },
     }).toArray();
   }
 
@@ -73,7 +73,7 @@ class StaffService {
     const updateData = this.extractStaffData(payload);
 
     // Không cho phép thay đổi mật khẩu qua API cập nhật thông tin
-    delete updateData.password;
+    delete updateData.Password;
 
     return await this.Staff.findOneAndUpdate(
       { _id: new ObjectId(id) },

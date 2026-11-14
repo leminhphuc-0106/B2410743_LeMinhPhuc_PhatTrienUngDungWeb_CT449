@@ -10,17 +10,17 @@ const authService = new AuthService();
 // Đăng ký độc giả
 exports.register = async (req, res, next) => {
   const {
-    ho_lot,
-    ten,
-    ngay_sinh,
-    phai,
-    dia_chi,
-    dien_thoai,
-    email,
-    password,
+    HoLot,
+    Ten,
+    NgaySinh,
+    Phai,
+    DiaChi,
+    DienThoai,
+    Email,
+    MatKhau,
   } = req.body;
 
-  if (!ho_lot || !ten || !email || !password) {
+  if (!HoLot || !Ten || !Email || !MatKhau) {
     return next(
       new ApiError(400, "Vui lòng điền đầy đủ thông tin bắt buộc")
     );
@@ -28,29 +28,29 @@ exports.register = async (req, res, next) => {
 
   try {
     const readerService = new ReaderService(MongoDB.client);
-    const existing = await readerService.findByEmail(email);
+    const existing = await readerService.findByEmail(Email);
 
     if (existing) {
       return next(new ApiError(400, "Email đã tồn tại"));
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(MatKhau, 10);
 
     const newReader = {
-      ho_lot,
-      ten,
-      ngay_sinh,
-      phai,
-      dia_chi,
-      dien_thoai,
-      email,
-      password: hashedPassword,
+      HoLot,
+      Ten,
+      NgaySinh,
+      Phai,
+      DiaChi,
+      DienThoai,
+      Email,
+      MatKhau: hashedPassword,
     };
 
     const result = await readerService.create(newReader);
 
     // Không trả mật khẩu về client
-    const { password: _, ...safeReader } = result;
+    const { MatKhau: _, ...safeReader } = result;
     return res.status(201).json({
       message: "Đăng ký độc giả thành công",
       reader: safeReader,
@@ -63,8 +63,8 @@ exports.register = async (req, res, next) => {
 
 // Đăng nhập độc giả
 exports.login = async (req, res, next) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
+  const { Email, MatKhau } = req.body;
+  if (!Email || !MatKhau) {
     return next(new ApiError(400, "Email và mật khẩu là bắt buộc"));
   }
 
@@ -73,8 +73,8 @@ exports.login = async (req, res, next) => {
 
     const result = await authService.login(
       readerService,
-      email,
-      password,
+      Email,
+      MatKhau,
       "reader"
     );
 
@@ -106,8 +106,8 @@ exports.update = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy độc giả"));
     }
 
-    if (req.body.email && req.body.email !== currentReader.email) {
-      const emailExists = await readerService.findByEmail(req.body.email);
+    if (req.body.Email && req.body.Email !== currentReader.Email) {
+      const emailExists = await readerService.findByEmail(req.body.Email);
 
       if (emailExists) {
         return next(new ApiError(400, "Email đã được sử dụng"));
@@ -128,7 +128,7 @@ exports.update = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy độc giả"));
     }
 
-    const { password, ...safeReader } = reader;
+    const { MatKhau, ...safeReader } = reader;
 
     return res.send({
       message: "Cập nhật thông tin độc giả thành công",
@@ -151,7 +151,7 @@ exports.getProfile = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy độc giả"));
     }
 
-    const { password, ...safeReader } = reader;
+    const { MatKhau, ...safeReader } = reader;
 
     return res.send(safeReader);
   } catch (error) {
@@ -170,7 +170,7 @@ exports.getById = async (req, res, next) => {
       return next(new ApiError(404, "Không tìm thấy độc giả"));
     }
 
-    const { password, ...safeReader } = reader;
+    const { MatKhau, ...safeReader } = reader;
 
     return res.send(safeReader);
   } catch (error) {
@@ -184,7 +184,7 @@ exports.getAll = async (req, res, next) => {
     const readerService = new ReaderService(MongoDB.client);
     const readers = await readerService.findAll();
 
-    const safeReaders = readers.map(({ password, ...reader }) => reader);
+    const safeReaders = readers.map(({ MatKhau, ...reader }) => reader);
 
     return res.send(safeReaders);
   } catch (error) {

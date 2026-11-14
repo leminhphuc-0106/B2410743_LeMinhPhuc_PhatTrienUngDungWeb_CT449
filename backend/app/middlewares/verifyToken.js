@@ -15,8 +15,8 @@ const verifyToken = (req, res, next) => {
       process.env.JWT_SECRET || ""
     );
 
+    req.user = decoded;
     req.id = decoded.id;
-    req.role = decoded.role;
 
     next();
   } catch (err) {
