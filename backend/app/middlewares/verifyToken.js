@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const config = require("../config");
 
 const verifyToken = (req, res, next) => {
   const token = req.headers["authorization"];
@@ -8,19 +9,16 @@ const verifyToken = (req, res, next) => {
   }
 
   try {
-    const bearerToken = token.split(" ")[1]; // "Bearer <token>"
+    const bearerToken = token.split(" ")[1];
 
-    const decoded = jwt.verify(
-      bearerToken,
-      process.env.JWT_SECRET || ""
-    );
+    const decoded = jwt.verify(bearerToken, config.auth.jwtSecret);
 
     req.user = decoded;
     req.id = decoded.id;
 
-    next();
-  } catch (err) {
-    console.error("Token verification failed:", err.message);
+    return next();
+  } catch (error) {
+    console.error("Token verification failed:", error.message);
     return res.status(401).send({ message: "Unauthorized!" });
   }
 };

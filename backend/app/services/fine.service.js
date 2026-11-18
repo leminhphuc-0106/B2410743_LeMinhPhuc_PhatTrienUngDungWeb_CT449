@@ -1,188 +1,156 @@
-
 const { ObjectId } = require("mongodb");
+const { toObjectId, toDate, toNumber, removeUndefined } = require("../utils/mongo.util");
+
+const DEFAULT_STATUS = "Chưa thanh toán";
 
 class FineService {
   constructor(client) {
     this.Fine = client.db().collection("PhieuPhat");
-    this.User = client.db().collection("Docgia");
-    this.Book = client.db().collection("Sach");
-    this.Employee = client.db().collection("NhanVien");
   }
 
-  // Trích xuất và chuẩn hóa dữ liệu phiếu phạt theo schema
   extractFineData(payload) {
-    const fine = {
-      MaNV: payload.MaNV,
-      MaSach: payload.MaSach,
-      MaDocGia: payload.MaDocGia,
-      NgayPhat: payload.NgayPhat,
+    return removeUndefined({
+      MaNV: toObjectId(payload.MaNV) ?? undefined,
+      MaSach: toObjectId(payload.MaSach) ?? undefined,
+      MaDocGia: toObjectId(payload.MaDocGia) ?? undefined,
+      NgayPhat: toDate(payload.NgayPhat),
       LyDoPhat: payload.LyDoPhat,
-      SoTienPhat: payload.SoTienPhat,
+      SoTienPhat: toNumber(payload.SoTienPhat),
       TrangThaiThanhToan: payload.TrangThaiThanhToan,
-    };
-
-    // Chuyển các mã liên kết sang ObjectId
-    ["MaNV", "MaSach", "MaDocGia"].forEach((key) => {
-      if (fine[key] !== undefined && ObjectId.isValid(fine[key])) {
-        fine[key] = new ObjectId(fine[key]);
-      }
     });
-
-    // Chuyển ngày phạt sang kiểu Date
-    if (fine.NgayPhat !== undefined) {
-      fine.NgayPhat = new Date(fine.NgayPhat);
-    }
-
-    // Chuyển số tiền phạt sang kiểu Number
-    if (fine.SoTienPhat !== undefined) {
-      fine.SoTienPhat = Number(fine.SoTienPhat);
-    }
-
-    // Xóa các trường có giá trị undefined
-    Object.keys(fine).forEach(
-      (key) => fine[key] === undefined && delete fine[key]
-    );
-
-    return fine;
   }
 
-  // Tạo phiếu phạt mới
   async create(payload) {
     const fine = this.extractFineData(payload);
 
-    // Tạo mã phiếu phạt
     fine.MaPhat = new ObjectId();
 
-    await this.Fine.insertOne(fine);
+    if (fine.NgayPhat === undefined) fine.NgayPhat = new Date();
+    if (fine.SoTienPhat === undefined) fine.SoTienPhat = 0;
+    if (fine.TrangThaiThanhToan === undefined) {
+      fine.TrangThaiThanhToan = DEFAULT_STATUS;
+    }
 
-    return fine;
+    const result = await this.Fine.insertOne(fine);
+
+    return { _id: result.insertedId, ...fine };
   }
 
-  // Tìm kiếm phiếu phạt theo điều kiện
-  async find(filter) {
-    const cursor = await this.Fine.find(filter);
-    return await cursor.toArray();
+  async find(filter = {}) {
+    return await this.Fine.find(filter).toArray();
   }
 
-  // Tìm phiếu phạt theo mã
   async findById(id) {
-    return await this.Fine.findOne({
-      MaPhat: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    });
+    if (!ObjectId.isValid(id)) return null;
+
+    return await this.Fine.findOne({ MaPhat: new ObjectId(id) });
   }
 
-  // Tìm phiếu phạt theo mã độc giả
-  async findByUserId(userId) {
-    return await this.Fine.find({
-      MaDocGia: ObjectId.isValid(userId)
-        ? new ObjectId(userId)
-        : null,
-    }).toArray();
+  async findByReaderId(MaDocGia) {
+    const maDocGia = toObjectId(MaDocGia);
+
+    if (!maDocGia) {
+      throw new Error("Mã độc giả không hợp lệ");
+    }
+
+    return await this.find({ MaDocGia: maDocGia });
   }
 
-  // Tìm phiếu phạt theo mã sách
-  async findByBookId(bookId) {
-    return await this.Fine.find({
-      MaSach: ObjectId.isValid(bookId)
-        ? new ObjectId(bookId)
-        : null,
-    }).toArray();
+  async findByBookId(MaSach) {
+    const maSach = toObjectId(MaSach);
+
+    if (!maSach) {
+      throw new Error("Mã sách không hợp lệ");
+    }
+
+    return await this.find({ MaSach: maSach });
   }
 
-  // Tìm phiếu phạt theo mã nhân viên
-  async findByEmployeeId(employeeId) {
-    return await this.Fine.find({
-      MaNV: ObjectId.isValid(employeeId)
-        ? new ObjectId(employeeId)
-        : null,
-    }).toArray();
+  async findByEmployeeId(MaNV) {
+    const maNV = toObjectId(MaNV);
+
+    if (!maNV) {
+      throw new Error("Mã nhân viên không hợp lệ");
+    }
+
+    return await this.find({ MaNV: maNV });
   }
 
-  // Cập nhật thông tin phiếu phạt
   async update(id, payload) {
-    const filter = {
-      MaPhat: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    };
+    if (!ObjectId.isValid(id)) return null;
 
     const update = this.extractFineData(payload);
 
-    // Không cho phép thay đổi mã phiếu phạt
     delete update.MaPhat;
 
-    const result = await this.Fine.findOneAndUpdate(
-      filter,
+    if (Object.keys(update).length === 0) {
+      return await this.findById(id);
+    }
+
+    return await this.Fine.findOneAndUpdate(
+      { MaPhat: new ObjectId(id) },
       { $set: update },
       { returnDocument: "after" }
     );
-
-    return result;
   }
 
-  // Xóa phiếu phạt theo mã
   async delete(id) {
+    if (!ObjectId.isValid(id)) return null;
+
     return await this.Fine.findOneAndDelete({
-      MaPhat: ObjectId.isValid(id) ? new ObjectId(id) : null,
+      MaPhat: new ObjectId(id),
     });
   }
 
-  // Xóa tất cả phiếu phạt
   async deleteAll() {
     const result = await this.Fine.deleteMany({});
     return result.deletedCount;
   }
 
-  // Lấy tất cả phiếu phạt kèm thông tin độc giả, sách và nhân viên
   async findAll() {
-    const pipeline = [
-      // Nối với collection Docgia
+    return await this.Fine.aggregate([
       {
         $lookup: {
-          from: "Docgia",
+          from: "DocGia",
           localField: "MaDocGia",
           foreignField: "MaDocGia",
-          as: "user",
+          as: "docGia",
         },
       },
       {
         $unwind: {
-          path: "$user",
+          path: "$docGia",
           preserveNullAndEmptyArrays: true,
         },
       },
-
-      // Nối với collection Sach
       {
         $lookup: {
           from: "Sach",
           localField: "MaSach",
           foreignField: "MaSach",
-          as: "book",
+          as: "sach",
         },
       },
       {
         $unwind: {
-          path: "$book",
+          path: "$sach",
           preserveNullAndEmptyArrays: true,
         },
       },
-
-      // Nối với collection NhanVien
       {
         $lookup: {
           from: "NhanVien",
           localField: "MaNV",
           foreignField: "MSNV",
-          as: "employee",
+          as: "nhanVien",
         },
       },
       {
         $unwind: {
-          path: "$employee",
+          path: "$nhanVien",
           preserveNullAndEmptyArrays: true,
         },
       },
-
-      // Chọn các trường cần trả về
       {
         $project: {
           MaPhat: 1,
@@ -193,30 +161,18 @@ class FineService {
           LyDoPhat: 1,
           SoTienPhat: 1,
           TrangThaiThanhToan: 1,
-
-          "user.HoLot": 1,
-          "user.Ten": 1,
-          "user.Email": 1,
-          "user.DienThoai": 1,
-
-          "book.TenSach": 1,
-
-          "employee.HoTenNV": 1,
+          HoLot: "$docGia.HoLot",
+          Ten: "$docGia.Ten",
+          Email: "$docGia.Email",
+          DienThoai: "$docGia.DienThoai",
+          TenSach: "$sach.TenSach",
+          HoTenNV: "$nhanVien.HoTenNV",
         },
       },
-
-      // Sắp xếp phiếu phạt mới nhất trước
-      {
-        $sort: {
-          NgayPhat: -1,
-        },
-      },
-    ];
-
-    return await this.Fine.aggregate(pipeline).toArray();
+      { $sort: { NgayPhat: -1 } },
+    ]).toArray();
   }
 
-  // Thống kê tổng số tiền phạt
   async getTotalFineAmount() {
     const result = await this.Fine.aggregate([
       {
@@ -230,10 +186,9 @@ class FineService {
     return result.length > 0 ? result[0].totalAmount : 0;
   }
 
-  // Thống kê số phiếu phạt chưa thanh toán
   async getUnpaidCount() {
     return await this.Fine.countDocuments({
-      TrangThaiThanhToan: "Chưa thanh toán",
+      TrangThaiThanhToan: DEFAULT_STATUS,
     });
   }
 }

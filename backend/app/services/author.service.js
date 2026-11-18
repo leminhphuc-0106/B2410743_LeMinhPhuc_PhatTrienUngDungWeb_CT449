@@ -1,91 +1,95 @@
-const { ObjectId } = require("mongodb");
+const { removeUndefined } = require("../utils/mongo.util");
 
 class AuthorService {
   constructor(client) {
-    this.Author = client.db().collection("TacGia"); // Khởi tạo collection tác giả trong MongoDB
+    this.Author = client.db().collection("TacGia");
+    this.Counter = client.db().collection("Counters");
   }
 
-  // Lọc và lấy các trường dữ liệu hợp lệ từ payload
   extractAuthorData(payload) {
-    const author = {
-      TenTG: payload.TenTG,
+    return removeUndefined({
+      TenTG: payload.TenTG?.trim(),
       QuocTich: payload.QuocTich,
-    };
-
-    // Xoá các trường undefined
-    Object.keys(author).forEach(
-      (key) => author[key] === undefined && delete author[key]
-    );
-    return author;
+    });
   }
 
-  // Thêm tác giả mới hoặc cập nhật thông tin nếu tác giả đã tồn tại
+  async getNextMaTG() {
+    const result = await this.Counter.findOneAndUpdate(
+      { _id: "MaTG" },
+      { $inc: { sequence_value: 1 } },
+      { upsert: true, returnDocument: "after" }
+    );
+
+    return result.sequence_value;
+  }
+
   async create(payload) {
     const author = this.extractAuthorData(payload);
-    const result = await this.Author.findOneAndUpdate(
-      { TenTG: author.TenTG }, // Tìm theo tên tác giả
-      { $set: author }, // Cập nhật các trường author
-      { upsert: true, returnDocument: "after" } // Tạo mới nếu chưa có
-    );
-    return result;
+
+    const existing = await this.Author.findOne({ TenTG: author.TenTG });
+
+    if (existing) {
+      return await this.update(existing.MaTG, author);
+    }
+
+    author.MaTG = await this.getNextMaTG();
+
+    const result = await this.Author.insertOne(author);
+
+    return { _id: result.insertedId, ...author };
   }
 
-  // Tìm kiếm danh sách tác giả theo điều kiện lọc
-  async find(filter) {
-    const cursor = await this.Author.find(filter);
-    return await cursor.toArray();
+  async find(filter = {}) {
+    return await this.Author.find(filter).toArray();
   }
 
-  // Tìm kiếm tác giả theo tên, không phân biệt chữ hoa và chữ thường
   async findByName(name) {
-    return await this.find({
+    return await this.Author.find({
       TenTG: { $regex: new RegExp(name, "i") },
-    });
+    }).toArray();
   }
 
-  // Tìm tác giả theo mã định danh ObjectId
   async findById(id) {
-    return await this.Author.findOne({
-      _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    });
+    const maTG = Number(id);
+
+    if (!Number.isInteger(maTG)) return null;
+
+    return await this.Author.findOne({ MaTG: maTG });
   }
 
-  // Cập nhật thông tin tác giả theo ID
   async update(id, payload) {
-    const filter = {
-      _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    };
+    const maTG = Number(id);
+
+    if (!Number.isInteger(maTG)) return null;
+
     const update = this.extractAuthorData(payload);
-    const result = await this.Author.findOneAndUpdate(
-      filter,
+
+    if (Object.keys(update).length === 0) {
+      return await this.findById(maTG);
+    }
+
+    return await this.Author.findOneAndUpdate(
+      { MaTG: maTG },
       { $set: update },
       { returnDocument: "after" }
     );
-    return result;
   }
 
-  // Xóa thông tin tác giả theo ID
   async delete(id) {
-    const result = await this.Author.findOneAndDelete({
-      _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    });
-    return result;
+    const maTG = Number(id);
+
+    if (!Number.isInteger(maTG)) return null;
+
+    return await this.Author.findOneAndDelete({ MaTG: maTG });
   }
 
-  // Xóa toàn bộ tác giả trong collection và trả về số lượng đã xóa
   async deleteAll() {
     const result = await this.Author.deleteMany({});
     return result.deletedCount;
   }
 
-  // Lấy toàn bộ danh sách tác giả trong collection
   async findAll() {
-    try {
-      return await this.Author.find({}).toArray();
-    } catch (error) {
-      console.error("Error in findAll:", error);
-      throw error;
-    }
+    return await this.Author.find({}).sort({ MaTG: 1 }).toArray();
   }
 }
 

@@ -1,52 +1,52 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const config = require("../config");
 
-const JWT_SECRET = process.env.JWT_SECRET || "khoa_cua_thu_vien";
+const PASSWORD_FIELDS = {
+  docgia: "MatKhau",
+  nhanvien: "Password",
+};
 
 class AuthService {
   async login(accountService, Email, password, accountType) {
     const account = await accountService.findByEmail(Email);
-    // Không thấy account
-    if (!account) {
-      console.log("SAI EMAIL");
-      return null;
-    }
 
-    // Mật khẩu được đặt tên theo schema của từng collection
-    const hashedPassword =
-      accountType === "nhanvien" ? account.Password : account.MatKhau;
+    if (!account) return null;
 
-    // So sánh mật khẩu
+    const passwordField = PASSWORD_FIELDS[accountType] || "MatKhau";
+    const hashedPassword = account[passwordField];
+
+    if (!hashedPassword) return null;
+
     const isMatch = await bcrypt.compare(password, hashedPassword);
 
-    if (!isMatch) {
-      console.log("SAI MAT KHAU");
-      return null;
-    }
+    if (!isMatch) return null;
 
+    const id = account.MSNV || account.MaDocGia || account._id;
     const payload = {
-      id: account._id,
-      accountType: accountType,
+      id: id.toString(),
+      accountType,
     };
 
-    // Chỉ tài khoản nhân viên mới có chức vụ
     if (accountType === "nhanvien") {
-      payload.Chucvu = account.Chucvu;
+      payload.ChucVu = account.ChucVu;
     }
 
-    const token = jwt.sign(payload, JWT_SECRET, {
+    const token = jwt.sign(payload, config.auth.jwtSecret, {
       expiresIn: "1d",
     });
 
     const accountInfo = {
-      id: account._id,
+      id: id.toString(),
       Email: account.Email,
     };
 
     if (accountType === "nhanvien") {
+      accountInfo.MSNV = account.MSNV;
       accountInfo.HoTenNV = account.HoTenNV;
-      accountInfo.Chucvu = account.Chucvu;
+      accountInfo.ChucVu = account.ChucVu;
     } else {
+      accountInfo.MaDocGia = account.MaDocGia;
       accountInfo.HoLot = account.HoLot;
       accountInfo.Ten = account.Ten;
     }

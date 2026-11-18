@@ -1,4 +1,3 @@
-
 const bcrypt = require("bcryptjs");
 const ApiError = require("../api_error");
 const StaffService = require("../services/staff.service");
@@ -7,17 +6,8 @@ const MongoDB = require("../utils/mongodb.util");
 
 const authService = new AuthService();
 
-// Tạo tài khoản nhân viên
-// Endpoint này chỉ nên cho admin được quyền sử dụng
 exports.register = async (req, res, next) => {
-  const {
-    HoTenNV,
-    Email,
-    Password,
-    Chucvu,
-    Diachi,
-    SoDienThoai,
-  } = req.body;
+  const { HoTenNV, Email, Password, ChucVu, Diachi, SoDienThoai } = req.body;
 
   if (!HoTenNV || !Email || !Password) {
     return next(
@@ -27,7 +17,6 @@ exports.register = async (req, res, next) => {
 
   try {
     const staffService = new StaffService(MongoDB.client);
-
     const existing = await staffService.findByEmail(Email);
 
     if (existing) {
@@ -36,22 +25,20 @@ exports.register = async (req, res, next) => {
 
     const hashedPassword = await bcrypt.hash(Password, 10);
 
-    const newStaff = {
+    const result = await staffService.create({
       HoTenNV,
       Email,
       Password: hashedPassword,
-      Chucvu,
+      ChucVu,
       Diachi,
       SoDienThoai,
-    };
+    });
 
-    const result = await staffService.create(newStaff);
-
-    const { Password: _, ...safeStaff } = result;
+    const { Password: _password, ...safeStaff } = result;
 
     return res.status(201).json({
       message: "Tạo tài khoản nhân viên thành công",
-      staff: safeStaff,
+      data: safeStaff,
     });
   } catch (error) {
     console.error("Register staff error:", error);
@@ -59,7 +46,6 @@ exports.register = async (req, res, next) => {
   }
 };
 
-// Đăng nhập nhân viên
 exports.login = async (req, res, next) => {
   const { Email, Password } = req.body;
 
@@ -82,10 +68,6 @@ exports.login = async (req, res, next) => {
       );
     }
 
-    if (result.locked) {
-      return next(new ApiError(401, "Tài khoản của bạn đang bị khóa"));
-    }
-
     return res.send(result);
   } catch (error) {
     console.error("Staff login error:", error);
@@ -93,7 +75,6 @@ exports.login = async (req, res, next) => {
   }
 };
 
-// Cập nhật thông tin nhân viên
 exports.update = async (req, res, next) => {
   try {
     const staffService = new StaffService(MongoDB.client);
@@ -112,21 +93,13 @@ exports.update = async (req, res, next) => {
       }
     }
 
-    const updated = await staffService.update(
-      req.params.id,
-      req.body
-    );
+    const updated = await staffService.update(req.params.id, req.body);
 
     if (!updated) {
       return next(new ApiError(404, "Không tìm thấy nhân viên"));
     }
 
-    const staff = updated.value ?? updated;
-    if (!staff) {
-      return next(new ApiError(404, "Không tìm thấy nhân viên"));
-    }
-
-    const { Password, ...safeStaff } = staff;
+    const { Password, ...safeStaff } = updated;
 
     return res.send({
       message: "Cập nhật thông tin nhân viên thành công",
@@ -138,11 +111,9 @@ exports.update = async (req, res, next) => {
   }
 };
 
-// Lấy thông tin nhân viên đang đăng nhập
 exports.getProfile = async (req, res, next) => {
   try {
     const staffService = new StaffService(MongoDB.client);
-
     const staff = await staffService.findById(req.id);
 
     if (!staff) {
@@ -158,7 +129,6 @@ exports.getProfile = async (req, res, next) => {
   }
 };
 
-// Lấy nhân viên theo ID
 exports.getById = async (req, res, next) => {
   try {
     const staffService = new StaffService(MongoDB.client);
@@ -172,11 +142,11 @@ exports.getById = async (req, res, next) => {
 
     return res.send(safeStaff);
   } catch (error) {
+    console.error("Get staff error:", error);
     return next(new ApiError(500, "Lỗi khi lấy thông tin nhân viên"));
   }
 };
 
-// Lấy danh sách nhân viên
 exports.getAll = async (req, res, next) => {
   try {
     const staffService = new StaffService(MongoDB.client);
@@ -186,17 +156,17 @@ exports.getAll = async (req, res, next) => {
 
     return res.send(safeStaffs);
   } catch (error) {
+    console.error("Get staffs error:", error);
     return next(new ApiError(500, "Lỗi khi lấy danh sách nhân viên"));
   }
 };
 
-// Xóa nhân viên
 exports.deleteById = async (req, res, next) => {
   try {
     const staffService = new StaffService(MongoDB.client);
     const result = await staffService.delete(req.params.id);
 
-    if (!result || !result.value) {
+    if (!result) {
       return next(new ApiError(404, "Không tìm thấy nhân viên"));
     }
 
@@ -204,6 +174,7 @@ exports.deleteById = async (req, res, next) => {
       message: "Xóa nhân viên thành công",
     });
   } catch (error) {
+    console.error("Delete staff error:", error);
     return next(new ApiError(500, "Lỗi khi xóa nhân viên"));
   }
 };

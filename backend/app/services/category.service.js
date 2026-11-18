@@ -1,106 +1,83 @@
 const { ObjectId } = require("mongodb");
+const { removeUndefined } = require("../utils/mongo.util");
 
 class CategoryService {
   constructor(client) {
     this.Category = client.db().collection("TheLoai");
   }
 
-  // Trích xuất và chuẩn hóa dữ liệu thể loại theo schema
   extractCategoryData(payload) {
-    const category = {
-      TenTheLoai: payload.TenTheLoai,
+    return removeUndefined({
+      TenTheLoai: payload.TenTheLoai?.trim(),
       MoTa: payload.MoTa,
-    };
-
-    // Xóa các trường có giá trị undefined
-    Object.keys(category).forEach(
-      (key) => category[key] === undefined && delete category[key]
-    );
-
-    return category;
+    });
   }
 
-  // Tạo mới hoặc cập nhật thể loại nếu tên đã tồn tại
   async create(payload) {
     const category = this.extractCategoryData(payload);
 
-    const result = await this.Category.findOneAndUpdate(
-      { TenTheLoai: category.TenTheLoai },
-      {
-        $set: category,
-        $setOnInsert: {
-          MaTheLoai: new ObjectId(),
-        },
-      },
-      {
-        returnDocument: "after",
-        upsert: true,
-      }
-    );
+    const existing = await this.Category.findOne({
+      TenTheLoai: category.TenTheLoai,
+    });
 
-    return result;
+    if (existing) {
+      return await this.update(existing.MaTheLoai, category);
+    }
+
+    category.MaTheLoai = new ObjectId();
+
+    const result = await this.Category.insertOne(category);
+
+    return { _id: result.insertedId, ...category };
   }
 
-  // Tìm kiếm thể loại theo điều kiện
-  async find(filter) {
-    const cursor = await this.Category.find(filter);
-    return await cursor.toArray();
+  async find(filter = {}) {
+    return await this.Category.find(filter).toArray();
   }
 
-  // Tìm thể loại theo tên
   async findByName(name) {
-    return await this.find({
+    return await this.Category.find({
       TenTheLoai: { $regex: new RegExp(name, "i") },
-    });
+    }).toArray();
   }
 
-  // Tìm thể loại theo mã
   async findById(id) {
-    return await this.Category.findOne({
-      MaTheLoai: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    });
+    if (!ObjectId.isValid(id)) return null;
+
+    return await this.Category.findOne({ MaTheLoai: new ObjectId(id) });
   }
 
-  // Cập nhật thông tin thể loại
   async update(id, payload) {
-    const filter = {
-      MaTheLoai: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    };
+    if (!ObjectId.isValid(id)) return null;
 
     const update = this.extractCategoryData(payload);
 
-    const result = await this.Category.findOneAndUpdate(
-      filter,
+    if (Object.keys(update).length === 0) {
+      return await this.findById(id);
+    }
+
+    return await this.Category.findOneAndUpdate(
+      { MaTheLoai: new ObjectId(id) },
       { $set: update },
       { returnDocument: "after" }
     );
-
-    return result;
   }
 
-  // Xóa thể loại theo mã
   async delete(id) {
-    const result = await this.Category.findOneAndDelete({
-      MaTheLoai: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    });
+    if (!ObjectId.isValid(id)) return null;
 
-    return result;
+    return await this.Category.findOneAndDelete({
+      MaTheLoai: new ObjectId(id),
+    });
   }
 
-  // Xóa tất cả thể loại
   async deleteAll() {
     const result = await this.Category.deleteMany({});
     return result.deletedCount;
   }
 
-  // Lấy danh sách tất cả thể loại
   async findAll() {
-    try {
-      return await this.Category.find({}).toArray();
-    } catch (error) {
-      console.error("Error in findAll:", error);
-      throw error;
-    }
+    return await this.Category.find({}).toArray();
   }
 }
 

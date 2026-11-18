@@ -1,4 +1,3 @@
-
 const bcrypt = require("bcryptjs");
 const ApiError = require("../api_error");
 const ReaderService = require("../services/reader.service");
@@ -7,18 +6,9 @@ const MongoDB = require("../utils/mongodb.util");
 
 const authService = new AuthService();
 
-// Đăng ký độc giả
 exports.register = async (req, res, next) => {
-  const {
-    HoLot,
-    Ten,
-    NgaySinh,
-    Phai,
-    DiaChi,
-    DienThoai,
-    Email,
-    MatKhau,
-  } = req.body;
+  const { HoLot, Ten, NgaySinh, Phai, DiaChi, DienThoai, Email, MatKhau } =
+    req.body;
 
   if (!HoLot || !Ten || !Email || !MatKhau) {
     return next(
@@ -36,7 +26,7 @@ exports.register = async (req, res, next) => {
 
     const hashedPassword = await bcrypt.hash(MatKhau, 10);
 
-    const newReader = {
+    const result = await readerService.create({
       HoLot,
       Ten,
       NgaySinh,
@@ -45,15 +35,13 @@ exports.register = async (req, res, next) => {
       DienThoai,
       Email,
       MatKhau: hashedPassword,
-    };
+    });
 
-    const result = await readerService.create(newReader);
+    const { MatKhau: _matKhau, ...safeReader } = result;
 
-    // Không trả mật khẩu về client
-    const { MatKhau: _, ...safeReader } = result;
     return res.status(201).json({
       message: "Đăng ký độc giả thành công",
-      reader: safeReader,
+      data: safeReader,
     });
   } catch (error) {
     console.error("Register reader error:", error);
@@ -61,31 +49,26 @@ exports.register = async (req, res, next) => {
   }
 };
 
-// Đăng nhập độc giả
 exports.login = async (req, res, next) => {
   const { Email, MatKhau } = req.body;
+
   if (!Email || !MatKhau) {
     return next(new ApiError(400, "Email và mật khẩu là bắt buộc"));
   }
 
   try {
     const readerService = new ReaderService(MongoDB.client);
-
     const result = await authService.login(
       readerService,
       Email,
       MatKhau,
-      "reader"
+      "docgia"
     );
 
     if (!result) {
       return next(
         new ApiError(401, "Email hoặc mật khẩu không chính xác")
       );
-    }
-
-    if (result.locked) {
-      return next(new ApiError(401, "Tài khoản của bạn đang bị khóa"));
     }
 
     return res.send(result);
@@ -95,7 +78,6 @@ exports.login = async (req, res, next) => {
   }
 };
 
-// Cập nhật thông tin độc giả
 exports.update = async (req, res, next) => {
   try {
     const readerService = new ReaderService(MongoDB.client);
@@ -114,21 +96,13 @@ exports.update = async (req, res, next) => {
       }
     }
 
-    const updated = await readerService.update(
-      req.params.id,
-      req.body
-    );
+    const updated = await readerService.update(req.params.id, req.body);
 
     if (!updated) {
       return next(new ApiError(404, "Không tìm thấy độc giả"));
     }
 
-    const reader = updated.value ?? updated;
-    if (!reader) {
-      return next(new ApiError(404, "Không tìm thấy độc giả"));
-    }
-
-    const { MatKhau, ...safeReader } = reader;
+    const { MatKhau, ...safeReader } = updated;
 
     return res.send({
       message: "Cập nhật thông tin độc giả thành công",
@@ -140,11 +114,9 @@ exports.update = async (req, res, next) => {
   }
 };
 
-// Lấy thông tin độc giả đang đăng nhập
 exports.getProfile = async (req, res, next) => {
   try {
     const readerService = new ReaderService(MongoDB.client);
-
     const reader = await readerService.findById(req.id);
 
     if (!reader) {
@@ -160,7 +132,6 @@ exports.getProfile = async (req, res, next) => {
   }
 };
 
-// Lấy độc giả theo ID
 exports.getById = async (req, res, next) => {
   try {
     const readerService = new ReaderService(MongoDB.client);
@@ -174,11 +145,11 @@ exports.getById = async (req, res, next) => {
 
     return res.send(safeReader);
   } catch (error) {
+    console.error("Get reader error:", error);
     return next(new ApiError(500, "Lỗi khi lấy thông tin độc giả"));
   }
 };
 
-// Lấy danh sách độc giả
 exports.getAll = async (req, res, next) => {
   try {
     const readerService = new ReaderService(MongoDB.client);
@@ -188,17 +159,17 @@ exports.getAll = async (req, res, next) => {
 
     return res.send(safeReaders);
   } catch (error) {
+    console.error("Get readers error:", error);
     return next(new ApiError(500, "Lỗi khi lấy danh sách độc giả"));
   }
 };
 
-// Xóa độc giả
 exports.deleteById = async (req, res, next) => {
   try {
     const readerService = new ReaderService(MongoDB.client);
     const result = await readerService.delete(req.params.id);
 
-    if (!result || !result.value) {
+    if (!result) {
       return next(new ApiError(404, "Không tìm thấy độc giả"));
     }
 
@@ -206,6 +177,7 @@ exports.deleteById = async (req, res, next) => {
       message: "Xóa độc giả thành công",
     });
   } catch (error) {
+    console.error("Delete reader error:", error);
     return next(new ApiError(500, "Lỗi khi xóa độc giả"));
   }
 };

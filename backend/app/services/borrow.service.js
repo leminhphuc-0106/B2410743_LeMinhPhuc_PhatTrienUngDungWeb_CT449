@@ -1,152 +1,125 @@
-const { ObjectId } = require("mongodb");
+const { toObjectId, toDate, removeUndefined } = require("../utils/mongo.util");
 
 class BorrowService {
   constructor(client) {
-    const db = client.db();
-
-    this.Borrow = db.collection("TheoDoiMuonSach");
-    this.Book = db.collection("Sach");
-    this.User = db.collection("Docgia");
-    this.Counter = db.collection("Counters");
+    this.Borrow = client.db().collection("TheoDoiMuonSach");
+    this.Book = client.db().collection("Sach");
+    this.Reader = client.db().collection("DocGia");
+    this.Counter = client.db().collection("Counters");
   }
 
-  // Kiểm tra và chuyển đổi sang ObjectId
-  toObjectId(value, fieldName) {
-    if (value instanceof ObjectId) return value;
+  requireObjectId(value, fieldName) {
+    const objectId = toObjectId(value);
 
-    if (!ObjectId.isValid(value)) {
+    if (!objectId) {
       throw new Error(`${fieldName} không hợp lệ`);
     }
 
-    return new ObjectId(value);
+    return objectId;
   }
 
-  // Trích xuất và chuẩn hóa dữ liệu theo schema TheoDoiMuonSach
   extractBorrowData(payload) {
-    const borrow = {
-      MaDocGia: this.toObjectId(payload.MaDocGia, "Mã độc giả"),
-      MaSach: this.toObjectId(payload.MaSach, "Mã sách"),
-      MaNV: this.toObjectId(payload.MaNV, "Mã nhân viên"),
-      NgayMuon: payload.NgayMuon
-        ? new Date(payload.NgayMuon)
-        : new Date(),
-      NgayTra: payload.NgayTra
-        ? new Date(payload.NgayTra)
-        : null,
-    };
+    const ngayMuon = payload.NgayMuon ? toDate(payload.NgayMuon) : new Date();
 
-    if (Number.isNaN(borrow.NgayMuon.getTime())) {
+    if (!ngayMuon) {
       throw new Error("Ngày mượn không hợp lệ");
     }
 
-    if (borrow.NgayTra && Number.isNaN(borrow.NgayTra.getTime())) {
-      throw new Error("Ngày trả không hợp lệ");
+    let ngayTra = null;
+
+    if (payload.NgayTra !== undefined && payload.NgayTra !== null && payload.NgayTra !== "") {
+      ngayTra = toDate(payload.NgayTra);
+
+      if (!ngayTra) {
+        throw new Error("Ngày trả không hợp lệ");
+      }
     }
 
-    return borrow;
+    return removeUndefined({
+      MaDocGia: this.requireObjectId(payload.MaDocGia, "Mã độc giả"),
+      MaSach: this.requireObjectId(payload.MaSach, "Mã sách"),
+      MaNV: payload.MaNV ? this.requireObjectId(payload.MaNV, "Mã nhân viên") : undefined,
+      NgayMuon: ngayMuon,
+      NgayTra: ngayTra,
+    });
   }
 
-  // Tạo mã theo dõi mượn sách tự tăng
-  async getNextBorrowId() {
+  async getNextMaTheoDoi() {
     const result = await this.Counter.findOneAndUpdate(
       { _id: "MaTheoDoi" },
       { $inc: { sequence_value: 1 } },
-      {
-        upsert: true,
-        returnDocument: "after",
-      }
+      { upsert: true, returnDocument: "after" }
     );
 
     return result.sequence_value;
   }
 
-  // Tạo phiếu mượn sách
   async create(payload) {
     const borrow = this.extractBorrowData(payload);
 
-    // Kiểm tra độc giả tồn tại
-    const user = await this.User.findOne({
-      _id: borrow.MaDocGia,
-    });
+    const reader = await this.Reader.findOne({ MaDocGia: borrow.MaDocGia });
 
-    if (!user) {
+    if (!reader) {
       throw new Error("Không tìm thấy độc giả");
     }
 
-    // Kiểm tra tài khoản có bị khóa không
-    if (user.bi_khoa) {
-      throw new Error("Tài khoản độc giả đang bị khóa");
-    }
-
-    // Kiểm tra sách tồn tại
-    const book = await this.Book.findOne({
-      _id: borrow.MaSach,
-    });
+    const book = await this.Book.findOne({ MaSach: borrow.MaSach });
 
     if (!book) {
       throw new Error("Không tìm thấy sách");
     }
 
-    // Kiểm tra số lượng sách
-    if (typeof book.so_luong === "number" && book.so_luong < 1) {
+    if (!book.SoQuyenConLai || book.SoQuyenConLai < 1) {
       throw new Error("Sách hiện không còn bản để mượn");
     }
 
-    // Sinh mã theo dõi
-    borrow.MaTheoDoi = await this.getNextBorrowId();
+    borrow.MaTheoDoi = await this.getNextMaTheoDoi();
 
     const result = await this.Borrow.insertOne(borrow);
 
-    // Giảm số lượng sách trong kho
-    if (typeof book.so_luong === "number") {
-      await this.Book.updateOne(
-        { _id: book._id },
-        { $inc: { so_luong: -1 } }
-      );
-    }
+    await this.Book.updateOne(
+      { MaSach: borrow.MaSach },
+      { $inc: { SoQuyenConLai: -1 } }
+    );
 
     return {
       acknowledged: result.acknowledged,
-      insertedId: result.insertedId,
+      insertId: result.insertedId,
       MaTheoDoi: borrow.MaTheoDoi,
     };
   }
 
-  // Tìm kiếm danh sách phiếu mượn theo điều kiện
   async find(filter = {}) {
     return await this.Borrow.find(filter).toArray();
   }
 
-  // Tìm phiếu mượn theo mã theo dõi
-  async findById(id) {
-    const borrowId = Number(id);
-
-    if (!Number.isInteger(borrowId)) {
-      return null;
-    }
-
-    return await this.Borrow.findOne({
-      MaTheoDoi: borrowId,
-    });
+  toMaTheoDoi(id) {
+    const maTheoDoi = Number(id);
+    return Number.isInteger(maTheoDoi) ? maTheoDoi : null;
   }
 
-  // Tìm phiếu mượn kèm thông tin độc giả và sách
-  async findWithDetails(filter = {}) {
-    const pipeline = [
-      {
-        $match: filter,
-      },
+  async findById(id) {
+    const maTheoDoi = this.toMaTheoDoi(id);
+
+    if (maTheoDoi === null) return null;
+
+    return await this.Borrow.findOne({ MaTheoDoi: maTheoDoi });
+  }
+
+  detailPipeline(filter = {}) {
+    return [
+      { $match: filter },
       {
         $lookup: {
-          from: "Docgia",
+          from: "DocGia",
           localField: "MaDocGia",
-          foreignField: "_id",
-          as: "docgia",
+          foreignField: "MaDocGia",
+          as: "docGia",
         },
       },
       {
         $unwind: {
-          path: "$docgia",
+          path: "$docGia",
           preserveNullAndEmptyArrays: true,
         },
       },
@@ -154,13 +127,27 @@ class BorrowService {
         $lookup: {
           from: "Sach",
           localField: "MaSach",
-          foreignField: "_id",
+          foreignField: "MaSach",
           as: "sach",
         },
       },
       {
         $unwind: {
           path: "$sach",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "NhanVien",
+          localField: "MaNV",
+          foreignField: "MSNV",
+          as: "nhanVien",
+        },
+      },
+      {
+        $unwind: {
+          path: "$nhanVien",
           preserveNullAndEmptyArrays: true,
         },
       },
@@ -173,159 +160,140 @@ class BorrowService {
           MaNV: 1,
           NgayMuon: 1,
           NgayTra: 1,
-
-          "docgia._id": 1,
-          "docgia.ho_ten": 1,
-          "docgia.email": 1,
-
-          "sach._id": 1,
-          "sach.ten_sach": 1,
-          "sach.don_gia": 1,
+          HoLot: "$docGia.HoLot",
+          Ten: "$docGia.Ten",
+          Email: "$docGia.Email",
+          DienThoai: "$docGia.DienThoai",
+          TenSach: "$sach.TenSach",
+          DonGia: "$sach.DonGia",
+          HoTenNV: "$nhanVien.HoTenNV",
         },
       },
+      { $sort: { MaTheoDoi: -1 } },
     ];
-
-    return await this.Borrow.aggregate(pipeline).toArray();
   }
 
-  // Trả sách và cập nhật ngày trả
+  async findWithDetails(filter = {}) {
+    return await this.Borrow.aggregate(this.detailPipeline(filter)).toArray();
+  }
+
+  async findByReader(MaDocGia) {
+    const maDocGia = toObjectId(MaDocGia);
+
+    if (!maDocGia) {
+      throw new Error("Mã độc giả không hợp lệ");
+    }
+
+    return await this.findWithDetails({ MaDocGia: maDocGia });
+  }
+
   async returnBook(id, ngayTra = new Date()) {
-    const borrow = await this.findById(id);
+    const maTheoDoi = this.toMaTheoDoi(id);
 
-    if (!borrow) {
-      return null;
-    }
+    if (maTheoDoi === null) return null;
 
-    // Kiểm tra sách đã được trả chưa
-    if (borrow.NgayTra) {
-      return borrow;
-    }
+    const borrow = await this.findById(maTheoDoi);
 
-    const returnDate = new Date(ngayTra);
+    if (!borrow) return null;
 
-    if (Number.isNaN(returnDate.getTime())) {
+    if (borrow.NgayTra) return borrow;
+
+    const returnDate = toDate(ngayTra);
+
+    if (!returnDate) {
       throw new Error("Ngày trả không hợp lệ");
     }
 
     const result = await this.Borrow.findOneAndUpdate(
-      {
-        MaTheoDoi: Number(id),
-        NgayTra: null,
-      },
-      {
-        $set: {
-          NgayTra: returnDate,
-        },
-      },
-      {
-        returnDocument: "after",
-      }
+      { MaTheoDoi: maTheoDoi, NgayTra: null },
+      { $set: { NgayTra: returnDate } },
+      { returnDocument: "after" }
     );
 
-    // Cập nhật lại số lượng sách trong kho
     if (result) {
       await this.Book.updateOne(
-        { _id: borrow.MaSach },
-        { $inc: { so_luong: 1 } }
+        { MaSach: borrow.MaSach },
+        { $inc: { SoQuyenConLai: 1 } }
       );
     }
 
     return result;
   }
 
-  // Cập nhật thông tin phiếu mượn
   async update(id, payload) {
-    const borrowId = Number(id);
+    const maTheoDoi = this.toMaTheoDoi(id);
 
-    if (!Number.isInteger(borrowId)) {
-      return null;
-    }
+    if (maTheoDoi === null) return null;
 
-    const updateData = {};
+    const update = {};
 
     if (payload.MaDocGia !== undefined) {
-      updateData.MaDocGia = this.toObjectId(
-        payload.MaDocGia,
-        "Mã độc giả"
-      );
+      update.MaDocGia = this.requireObjectId(payload.MaDocGia, "Mã độc giả");
     }
 
     if (payload.MaSach !== undefined) {
-      updateData.MaSach = this.toObjectId(
-        payload.MaSach,
-        "Mã sách"
-      );
+      update.MaSach = this.requireObjectId(payload.MaSach, "Mã sách");
     }
 
     if (payload.MaNV !== undefined) {
-      updateData.MaNV = this.toObjectId(
-        payload.MaNV,
-        "Mã nhân viên"
-      );
+      update.MaNV = this.requireObjectId(payload.MaNV, "Mã nhân viên");
     }
 
     if (payload.NgayMuon !== undefined) {
-      updateData.NgayMuon = new Date(payload.NgayMuon);
+      update.NgayMuon = toDate(payload.NgayMuon);
 
-      if (Number.isNaN(updateData.NgayMuon.getTime())) {
+      if (!update.NgayMuon) {
         throw new Error("Ngày mượn không hợp lệ");
       }
     }
 
     if (payload.NgayTra !== undefined) {
-      updateData.NgayTra = payload.NgayTra
-        ? new Date(payload.NgayTra)
-        : null;
+      update.NgayTra = payload.NgayTra ? toDate(payload.NgayTra) : null;
 
-      if (
-        updateData.NgayTra &&
-        Number.isNaN(updateData.NgayTra.getTime())
-      ) {
+      if (payload.NgayTra && !update.NgayTra) {
         throw new Error("Ngày trả không hợp lệ");
       }
     }
 
-    if (Object.keys(updateData).length === 0) {
-      return await this.findById(borrowId);
+    if (Object.keys(update).length === 0) {
+      return await this.findById(maTheoDoi);
     }
 
     return await this.Borrow.findOneAndUpdate(
-      { MaTheoDoi: borrowId },
-      { $set: updateData },
+      { MaTheoDoi: maTheoDoi },
+      { $set: update },
       { returnDocument: "after" }
     );
   }
 
-  // Xóa phiếu mượn
   async delete(id) {
-    const borrow = await this.findById(id);
+    const maTheoDoi = this.toMaTheoDoi(id);
 
-    if (!borrow) {
-      return null;
-    }
+    if (maTheoDoi === null) return null;
+
+    const borrow = await this.findById(maTheoDoi);
+
+    if (!borrow) return null;
 
     const result = await this.Borrow.findOneAndDelete({
-      MaTheoDoi: Number(id),
+      MaTheoDoi: maTheoDoi,
     });
 
-    // Nếu chưa trả sách thì hoàn lại số lượng trong kho
     if (result && !borrow.NgayTra) {
       await this.Book.updateOne(
-        { _id: borrow.MaSach },
-        { $inc: { so_luong: 1 } }
+        { MaSach: borrow.MaSach },
+        { $inc: { SoQuyenConLai: 1 } }
       );
     }
 
     return result;
   }
 
-  // Xóa tất cả phiếu mượn
   async deleteAll() {
     const result = await this.Borrow.deleteMany({});
     return result.deletedCount;
   }
 
-  // Lấy tất cả phiếu mượn
   async findAll() {
     return await this.Borrow.find({}).toArray();
   }

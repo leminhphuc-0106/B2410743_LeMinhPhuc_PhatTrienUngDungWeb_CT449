@@ -52,6 +52,7 @@ __screenshots__/
 # Vite
 *.timestamp-*-*.mjs
 backend/seedAdmin.js
-data_test.json
+docgia.json
+nhanvien.json
 
 schema.png

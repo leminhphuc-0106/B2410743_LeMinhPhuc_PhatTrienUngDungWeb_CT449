@@ -1,21 +1,18 @@
 const verifyStaff = (req, res, next) => {
-  const { id, accountType, Chucvu } = req.user;
+  const { id, accountType, ChucVu } = req.user;
 
   if (accountType !== "nhanvien") {
     return res.status(403).send({
-      message: "Bạn không có quyền thực hiện thao tác này!"
+      message: "Bạn không có quyền thực hiện thao tác này!",
     });
   }
 
-  if (
-    Chucvu === "admin" ||
-    (Chucvu === "staff" && id === req.params.id)
-  ) {
+  if (ChucVu === "admin" || (ChucVu === "staff" && id === req.params.id)) {
     return next();
   }
 
   return res.status(403).send({
-    message: "Bạn không có quyền thực hiện thao tác này!"
+    message: "Bạn không có quyền thực hiện thao tác này!",
   });
 };
 

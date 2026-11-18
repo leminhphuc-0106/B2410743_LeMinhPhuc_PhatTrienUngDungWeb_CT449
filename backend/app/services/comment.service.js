@@ -1,105 +1,61 @@
-
 const { ObjectId } = require("mongodb");
+const { toObjectId, toDate, toNumber, removeUndefined } = require("../utils/mongo.util");
 
 class CommentService {
   constructor(client) {
     this.Comment = client.db().collection("DanhGiaSach");
-    this.User = client.db().collection("Docgia");
-    this.Book = client.db().collection("Sach");
   }
 
-  // Trích xuất và chuẩn hóa dữ liệu đánh giá theo schema
   extractCommentData(payload) {
-    const comment = {
-      MaDocGia: payload.MaDocGia,
-      MaSach: payload.MaSach,
-      SoSao: payload.SoSao ?? 5,
+    return removeUndefined({
+      MaDocGia: toObjectId(payload.MaDocGia) ?? undefined,
+      MaSach: toObjectId(payload.MaSach) ?? undefined,
+      SoSao: toNumber(payload.SoSao),
       NhanXet: payload.NhanXet,
-      NgayDanhGia: payload.NgayDanhGia ?? new Date(),
-    };
-
-    // Chuyển mã độc giả và mã sách thành ObjectId
-    if (comment.MaDocGia && ObjectId.isValid(comment.MaDocGia)) {
-      comment.MaDocGia = new ObjectId(comment.MaDocGia);
-    }
-
-    if (comment.MaSach && ObjectId.isValid(comment.MaSach)) {
-      comment.MaSach = new ObjectId(comment.MaSach);
-    }
-
-    // Xóa các trường có giá trị undefined
-    Object.keys(comment).forEach(
-      (key) => comment[key] === undefined && delete comment[key]
-    );
-
-    return comment;
+      NgayDanhGia: toDate(payload.NgayDanhGia),
+    });
   }
 
-  // Tạo đánh giá sách mới
   async create(payload) {
     const comment = this.extractCommentData(payload);
 
-    // Tạo mã đánh giá
+    if (!comment.MaDocGia) {
+      throw new Error("Mã độc giả không hợp lệ");
+    }
+
+    if (!comment.MaSach) {
+      throw new Error("Mã sách không hợp lệ");
+    }
+
+    if (comment.SoSao === undefined) comment.SoSao = 5;
+    if (comment.NgayDanhGia === undefined) comment.NgayDanhGia = new Date();
+
     comment.MaDanhGia = new ObjectId();
 
-    await this.Comment.insertOne(comment);
+    const result = await this.Comment.insertOne(comment);
 
-    return comment;
+    return { _id: result.insertedId, ...comment };
   }
 
-  // Tìm kiếm đánh giá theo điều kiện
-  async find(filter) {
-    const cursor = await this.Comment.find(filter);
-    return await cursor.toArray();
+  async find(filter = {}) {
+    return await this.Comment.find(filter).toArray();
   }
 
-  // Tìm đánh giá theo mã sách, kèm thông tin độc giả
-  async findByBookId(bookId) {
-    const comments = await this.Comment.aggregate([
-      {
-        $match: {
-          MaSach: ObjectId.isValid(bookId)
-            ? new ObjectId(bookId)
-            : null,
-        },
-      },
+  detailPipeline(filter = {}) {
+    return [
+      { $match: filter },
       {
         $lookup: {
-          from: "Docgia",
+          from: "DocGia",
           localField: "MaDocGia",
           foreignField: "MaDocGia",
-          as: "user",
+          as: "docGia",
         },
       },
       {
-        $unwind: "$user",
-      },
-      {
-        $project: {
-          MaDanhGia: 1,
-          MaDocGia: 1,
-          MaSach: 1,
-          NhanXet: 1,
-          SoSao: 1,
-          NgayDanhGia: 1,
-          "user.HoLot": 1,
-          "user.Ten": 1,
-          "user.Email": 1,
-        },
-      },
-    ]).toArray();
-
-    return comments;
-  }
-
-  // Tìm đánh giá theo mã độc giả, kèm thông tin sách
-  async findByUserId(userId) {
-    const comments = await this.Comment.aggregate([
-      {
-        $match: {
-          MaDocGia: ObjectId.isValid(userId)
-            ? new ObjectId(userId)
-            : null,
+        $unwind: {
+          path: "$docGia",
+          preserveNullAndEmptyArrays: true,
         },
       },
       {
@@ -107,121 +63,96 @@ class CommentService {
           from: "Sach",
           localField: "MaSach",
           foreignField: "MaSach",
-          as: "book",
+          as: "sach",
         },
       },
       {
-        $unwind: "$book",
+        $unwind: {
+          path: "$sach",
+          preserveNullAndEmptyArrays: true,
+        },
       },
       {
         $project: {
           MaDanhGia: 1,
           MaDocGia: 1,
           MaSach: 1,
-          NhanXet: 1,
           SoSao: 1,
+          NhanXet: 1,
           NgayDanhGia: 1,
-          "book.TenSach": 1,
+          HoLot: "$docGia.HoLot",
+          Ten: "$docGia.Ten",
+          Email: "$docGia.Email",
+          TenSach: "$sach.TenSach",
         },
       },
-    ]).toArray();
-
-    return comments;
+      { $sort: { NgayDanhGia: -1 } },
+    ];
   }
 
-  // Tìm đánh giá theo mã
+  async findByBookId(MaSach) {
+    const maSach = toObjectId(MaSach);
+
+    if (!maSach) {
+      throw new Error("Mã sách không hợp lệ");
+    }
+
+    return await this.Comment.aggregate(
+      this.detailPipeline({ MaSach: maSach })
+    ).toArray();
+  }
+
+  async findByReaderId(MaDocGia) {
+    const maDocGia = toObjectId(MaDocGia);
+
+    if (!maDocGia) {
+      throw new Error("Mã độc giả không hợp lệ");
+    }
+
+    return await this.Comment.aggregate(
+      this.detailPipeline({ MaDocGia: maDocGia })
+    ).toArray();
+  }
+
   async findById(id) {
-    return await this.Comment.findOne({
-      MaDanhGia: ObjectId.isValid(id)
-        ? new ObjectId(id)
-        : null,
-    });
+    if (!ObjectId.isValid(id)) return null;
+
+    return await this.Comment.findOne({ MaDanhGia: new ObjectId(id) });
   }
 
-  // Cập nhật thông tin đánh giá
   async update(id, payload) {
-    const filter = {
-      MaDanhGia: ObjectId.isValid(id)
-        ? new ObjectId(id)
-        : null,
-    };
+    if (!ObjectId.isValid(id)) return null;
 
     const update = this.extractCommentData(payload);
 
-    // Không cập nhật mã đánh giá
     delete update.MaDanhGia;
 
-    const result = await this.Comment.findOneAndUpdate(
-      filter,
+    if (Object.keys(update).length === 0) {
+      return await this.findById(id);
+    }
+
+    return await this.Comment.findOneAndUpdate(
+      { MaDanhGia: new ObjectId(id) },
       { $set: update },
       { returnDocument: "after" }
     );
-
-    return result;
   }
 
-  // Xóa đánh giá theo mã
   async delete(id) {
+    if (!ObjectId.isValid(id)) return null;
+
     return await this.Comment.findOneAndDelete({
-      MaDanhGia: ObjectId.isValid(id)
-        ? new ObjectId(id)
-        : null,
+      MaDanhGia: new ObjectId(id),
     });
   }
 
-  // Xóa tất cả đánh giá
   async deleteAll() {
     const result = await this.Comment.deleteMany({});
     return result.deletedCount;
   }
 
-  // Lấy tất cả đánh giá, kèm thông tin độc giả và sách
   async findAll() {
-    const pipeline = [
-      // Nối với collection Docgia
-      {
-        $lookup: {
-          from: "Docgia",
-          localField: "MaDocGia",
-          foreignField: "MaDocGia",
-          as: "user",
-        },
-      },
-      {
-        $unwind: "$user",
-      },
-
-      // Nối với collection Sach
-      {
-        $lookup: {
-          from: "Sach",
-          localField: "MaSach",
-          foreignField: "MaSach",
-          as: "book",
-        },
-      },
-      {
-        $unwind: "$book",
-      },
-
-      // Chọn các trường cần trả về
-      {
-        $project: {
-          MaDanhGia: 1,
-          MaDocGia: 1,
-          MaSach: 1,
-          NhanXet: 1,
-          SoSao: 1,
-          NgayDanhGia: 1,
-          "user.HoLot": 1,
-          "user.Ten": 1,
-          "user.Email": 1,
-          "book.TenSach": 1,
-        },
-      },
-    ];
-
-    return await this.Comment.aggregate(pipeline).toArray();
+    return await this.Comment.aggregate(this.detailPipeline()).toArray();
   }
 }
 
